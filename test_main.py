@@ -4,6 +4,8 @@ Created on May 11, 2015
 @author: acabreza
 '''
 from collections import defaultdict
+import threading
+import settings
 import progressbar
 import sys
 import connection
@@ -13,37 +15,60 @@ import sites_manager
 results = defaultdict(list)
 pbar = None
 progress = 0
+lock = threading.Lock()
 
 
-def results(response):
+def update_results(response):
     # user server type as key
+    global results
     if response:
-        results[response.get_server_type()].append(response)
+        server = "unknown"
+        if "server" in response.headers:
+            server = response.headers["server"]
+        results[server].append(response)
 
-def progress(pbar):
-    progress = progress + 1
-    pbar.update(progress) 
+
+def update_progress():
+    global progress, pbar
+    with lock:
+        progress = progress + 1
+        pbar.update(progress) 
+
 
 def print_servers():
+    global results
     report = ""
     for key in results.keys():
-        report = "Server Type: %s Count: %s\n" % (key, len(results[key]))
+        report = report + "Server Type: %s Count: %s\n" % (key, len(results[key]))
         for server in results[key]:
-            report = report + "url: %s\n" % server.url
+            report = report + "\turl: %s\n" % server.url
     return report
 
 
-def get_sites(num_sites):
-    results = {}
-    pbar = progressbar.ProgressBar().start()
-    
-    for sites in sites_manager.SitesManager(num_sites).sites():
-        conn = connection.Connection(sites, progress, results)
-        conn.start()
-    
+def exit():
+    global pbar
     pbar.finish()
-    print_servers()
+    print print_servers()
 
+
+def wait_results():
+    t = threading.Timer(settings.main_timeout, exit)
+    t.start()
+
+
+def get_sites(num_sites):
+    global pbar
+    results = {}
+    num_sites = int(num_sites)
+    pbar = progressbar.ProgressBar(widgets=[progressbar.Bar()], maxval=int(num_sites)).start()
+    
+    for site in sites_manager.SitesManager(num_sites).sites():
+        if site and site.url:
+            conn = connection.Connection(site.url, update_progress, update_results)
+            conn.start()
+    
+    wait_results()
+    
 
 def usage():
     print "test_main.py [n]"

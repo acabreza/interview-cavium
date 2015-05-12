@@ -15,4 +15,14 @@ class SitesManager(object):
     def sites(self):
         for _ in xrange(self.num_sites):
             # get sites from random url generator
-            yield requests.get(settings.random_sites).content
+            while True:
+                try:
+                    site = requests.get(settings.random_sites)
+                    if site.url.startswith("https"):
+                        continue
+                    else:
+                        yield site
+                        break
+                except Exception, e:
+                    #print e
+                    continue
